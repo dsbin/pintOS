@@ -92,9 +92,8 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  thread_sleep(start+ticks);
-  /*while (timer_elapsed (start) < ticks) 
-       thread_yield ();*/
+  thread_sleep(start + ticks); //add ticks to timer ticks for set sleep time
+  //thread_sleep(start+ticks);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,22 +170,29 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-	ticks++;
-	thread_tick ();
-	/*mlfqs스케줄러일 경우 1초 마다 load_avg,  모든 recent_cpu,priority 계산*/
-	if(thread_mlfqs == true)
-	{
-		/* 발생할 때마다 recurent_cpu 1씩 증가*/
-		mlfqs_increment();
-		/* 1초마다  load_avg,recent_cpu 재계산*/
-		if(ticks%100==0){ mlfqs_load_avg(); mlfqs_recalc();}
-		/* 4틱마다  load_avg,recent_cpu 재계산*/
-	
-		if(ticks%4==0) mlfqs_priority(thread_current());
-		
-	}
+  ticks++;
+  thread_tick ();
 
-	if(ticks>=get_next_tick_to_awake() ) thread_awake(ticks);
+  if (thread_mlfqs)
+  {
+    mlfqs_increment(); //Increase recent cpu value
+
+    if (ticks % TIMER_FREQ == 0) // Per 1second
+    {
+      mlfqs_load_avg();
+      mlfqs_recalc();  //Recalculate priority and recent cpu
+    }
+
+    if (ticks % 4 == 0)
+    {
+      mlfqs_priority(thread_current());  //Recalculate priority
+    }
+  }
+
+  if (ticks >= get_next_tick_to_awake())  //if ticks are big enough to wake next process than wake it up
+  {
+   thread_awake(ticks); 
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

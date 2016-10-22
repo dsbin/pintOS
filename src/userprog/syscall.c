@@ -11,340 +11,413 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
-static void syscall_handler (struct intr_frame*);
+static void syscall_handler (struct intr_frame *);
+
 void check_address(void *addr);
-void get_argument(void *sp, int *arg, int count);
+void get_argument(unsigned int *esp, int *arg, int argc);
+
 void halt (void);
 void exit (int status);
 bool create (const char *file, unsigned int initial_size);
 bool remove (const char *file);
-tid_t exec (char *cmd_line);
+tid_t exec (char *process_name);
 int wait (tid_t tid);
-int write(int fd, void *buffer, unsigned size);
-int read(int fd, void *buffer, unsigned size);
-int filesize(int fd);
-int open(const char *file_name);
-void seek(int fd, unsigned int position);
+int write(int fd, void* buffer, unsigned size);
+int read(int fd, void* buffer, unsigned size);
+int file_size(int fd);
+int open(const char* file);
+void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
 
-void syscall_init (void)
+void
+syscall_init (void) 
 {
-	/* initialize filesys_lock */
-	lock_init (&filesys_lock);
-	intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init (&filesys_lock);
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-static void syscall_handler (struct intr_frame *f UNUSED)
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
 {
-	unsigned int *sp = (unsigned int*)(f -> esp);
-	int number = *(int*)sp;
-	int arg[4];
+  unsigned int *esp = (unsigned int*)(f->esp);  //stack pointer
+  check_address(esp);
+  int sys_n = *(int*)esp;  //store system call number
+  int argument[4];
+  
+  esp++; //스택 값 증가
+  check_address(esp);
+  switch(sys_n)
+  {
+      //get_argument를 통해 각 함수에 필요한 인자의 갯수 리턴 받음
+      case SYS_HALT:
+          halt();
+          break;
+      case SYS_EXIT:
+          {
+            get_argument(esp, argument, 1);
+            int status = argument[0];
 
-	check_address(sp);
-	sp++;
-	check_address(sp);
+            exit(status);
+          }
+          break;
 
-	switch(number)
-	{
-		case SYS_HALT:
-			halt();		
-			break;
+      case SYS_EXEC:
+          {
+            get_argument(esp, argument, 1);
 
-		case SYS_EXIT:	
-			get_argument(sp, arg, 1);		
-			exit(arg[0]);
-			break;		
+            char *exec_filename = (char*)argument[0];
 
-		case SYS_CREATE:
-			get_argument(sp, arg, 2);
-			f -> eax = create((const char*)arg[0], (unsigned int)arg[1]); 
-			break;		
+            f->eax = exec(exec_filename);
+          }
+          break;
 
-		case SYS_REMOVE:
-			get_argument(sp, arg, 1);	
-			f -> eax = remove((const char*)arg[0]);	
-			break;	
+      case SYS_WAIT:
+          {
+            get_argument(esp, argument, 1);
 
-		case SYS_EXEC:
-			get_argument(sp, arg, 1);
-			f -> eax = exec((char*)arg[0]);
-			break;
+            int tid = argument[0];
+            
+            f->eax = wait(tid);
+          }
+          break;
 
-	 	case SYS_WAIT:
-			get_argument(sp, arg, 1);
-			f -> eax = wait(arg[0]);
-			break;
+      case SYS_CREATE:
+          {
+            get_argument(esp, argument, 2);
 
-	        case SYS_OPEN:
-	         	get_argument(sp, arg, 1);
-	                f -> eax = open((char*)arg[0]);
-		        break;
+            char *filename = (char*)argument[0];
+            unsigned int initial_size = (unsigned int)argument[1];
+            
+            f->eax = create(filename, initial_size);
+          }
+          break;
 
-	        case SYS_FILESIZE:
-			get_argument(sp, arg, 1);
-	                f -> eax = filesize(arg[0]); 
-			break;
+      case SYS_REMOVE:
+          {
+            get_argument(esp, argument, 1);
 
-	        case SYS_READ:
-	  		get_argument(sp, arg, 3);
-	                f -> eax = read(arg[0], (void*)arg[1], arg[2]);
-			break;
+            char *filename = (char*)argument[0];
 
-		case SYS_WRITE:
-			get_argument(sp, arg, 3);
-	                f -> eax = write(arg[0], (void*)arg[1], arg[2]);	
-			break;
+            f->eax = remove(filename);
+          }
+          break;
 
-		case SYS_SEEK:
-			get_argument(sp, arg, 2);
-	                seek(arg[0], (unsigned int)arg[1]);
-			break;
+      case SYS_OPEN:
+          {
+            get_argument(esp, argument, 1);
+          
+            char *filename = (char*)argument[0];
 
-		case SYS_TELL:
-			get_argument(sp, arg, 1);
-			f -> eax = tell(arg[0]);
-			break;
+            f->eax = open(filename);
+          }
+          break;
 
-		case SYS_CLOSE:
-			get_argument(sp, arg, 1);
-			close(arg[0]);
-			break;
-			           
-		default:
-			break;
-	}
+      case SYS_FILESIZE:
+          {
+            get_argument(esp, argument, 1);
+
+            int fd = argument[0];
+          
+            f->eax = file_size(fd);
+          }
+          break;
+
+      case SYS_READ:
+          {
+            get_argument(esp, argument, 3);
+
+            //printf("read!!\n");
+            int fd = argument[0];
+            void *buffer = (void*)argument[1];
+            unsigned int size = (unsigned int)argument[2];
+
+            f->eax = read(fd, buffer, size);
+          }
+          break;
+
+      case SYS_WRITE:
+          {
+            get_argument(esp, argument, 3);
+
+            int fd = argument[0];
+            void *buffer = (void*)argument[1];
+            unsigned int size = (unsigned int)argument[2];
+            //printf("esp : %x, fd : %d, buffer : %x, size : %d\n", esp, fd, buffer, size);
+
+            f->eax = write(fd, buffer, size);
+          }
+          break;
+
+      case SYS_SEEK:
+          {
+            get_argument(esp, argument, 2);
+            //printf("seek!!!\n");
+
+            int fd = argument[0];
+            unsigned int position = (unsigned int)argument[1];
+
+            seek(fd, position);
+          }
+          break;
+
+      case SYS_TELL:
+          {
+            get_argument(esp, argument, 1);
+            //printf("tell!!!\n");
+
+            int fd = argument[0];
+
+            f->eax = tell(fd);
+          }
+          break;
+
+      case SYS_CLOSE:
+          {
+            get_argument(esp, argument, 1);
+            //printf("close!!!\n");
+
+            int fd = argument[0];
+
+            close(fd);
+          }
+          break;
+  }
+
+  //thread_exit ();
 }
 
-/* check address whether kernel space or user space(user space : 0x8048000 ~ 0xc0000000)
-if user space, end current process */
-void check_address (void *addr)
-{
-	if ((unsigned int)addr <= 0x8048000 || (unsigned int)addr >= 0xc0000000) exit(-1);
+void
+check_address (void *addr)
+{ 
+  //check address is in user address range
+  if ((unsigned int)addr <= 0x8048000 || (unsigned int)addr >= 0xc0000000)
+      exit(-1);
+  //printf("checking address!!!!!!\n");
 }
 
-/* bring argument from stack and increase stack pointer */
-void get_argument (void *esp, int *arg, int count)
+void
+get_argument (unsigned int *esp, int *arg, int argc)
 {
-	int i;
-
-	for (i = 0; i < count; i++)
-	{
-		check_address(esp);
-		arg[i] = *(int*)(esp);
-		esp += 4;
-	}
+  int i;
+  for (i = 0; i < argc; i++)
+  {
+    check_address((void*)esp);
+    arg[i] = (int)*(esp);
+    esp++;  //insert esp address to kernel stack
+  }
 }
 
-/* end pintOS */
-void halt(void)
+void
+halt(void)
 {
-	shutdown_power_off();
+  //shutdown system
+  shutdown_power_off();
 }
 
-/* end current process */
-void exit (int status)
+void
+exit (int status)
 {
-	struct thread *current = thread_current();
-
-	printf ("%s: exit(%d)\n", current -> name, status);
-	current -> exit_status = status;
-
-	thread_exit();
+  //exit thread
+  struct thread *thread_cur = thread_current();  //현재 thread 를 받아옴
+  printf ("%s: exit(%d)\n", thread_cur->name, status);  //종료상태 출력
+  thread_cur->exit_status = status;  //종료상태 저장
+  thread_exit();
 }
 
-/* create new file */
-bool create (const char *file, unsigned int initial_size)
+bool
+create (const char *file, unsigned int initial_size)
 {
-	bool result;
+  check_address((void*)file);  //if argument is pointer
 
-	check_address((void*)file);
+  lock_acquire(&filesys_lock);  //lock을 걸 어줌
+  bool is_success = filesys_create(file, initial_size);  //create 성공 여부
+  lock_release(&filesys_lock);  //lock을 풀어줌
 
-	/* result == true : create success
-	result == false : create fail */
-	result = filesys_create(file, initial_size);
-
-	return result;
+  return is_success;
 }
 
-/* remove file */
-bool remove (const char *file)
+bool
+remove (const char *file)
 {
-	bool result;
+  check_address((void*)file);  //if argument is pointer
+  
+  lock_acquire(&filesys_lock);  //lock을 걸 어줌
+  bool is_success = filesys_remove(file);  //remove성공여부
+  lock_release(&filesys_lock);  //lock을 풀어줌
 
-	/* result == true : remove success
-	result == false : remove fail */
-	result = filesys_remove(file);
-
-	return result;
+  return is_success;
 }
 
-/* create child process and execute
-if create fail, return -1 */
-tid_t exec (char *cmd_line)
+tid_t
+exec (char *process_name)
 {
-	tid_t child_tid = process_execute(cmd_line);
-	struct thread *child_thread = get_child_process(child_tid);
+  tid_t exec_process_tid = process_execute(process_name);  //exec되는 process tid 
+  struct thread *exec_process = get_child_process(exec_process_tid);
 
-	if (child_thread)
-	{
-		sema_down(&child_thread -> load_sema);
-		if (child_thread -> is_embark_memory) return child_tid;
-		else return -1;
-	}
-	else return -1;
+  if (exec_process)
+    {
+      sema_down(&exec_process->load_sema);
+      
+        if (exec_process->is_load)
+        {
+          return exec_process_tid;
+        }
+        else
+        {
+          return -1;
+        }
+    }
+  else
+  {
+    return -1;
+  }
 }
 
-/* return child process's exit status */
-int wait (tid_t tid)
+int
+wait (tid_t tid)
 {
-	int ret = process_wait(tid);
-
-	return ret;
+  return process_wait(tid);
 }
 
-/* open file
-if fail, return -1 */
-int open (const char *file_name)
+int
+open (const char *file_name)
 {
-	struct file *file;
-	int fd;
+  check_address((void*)file_name);
 
-	if(file_name == NULL) exit(-1);
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
+  struct file *open_file_name = filesys_open(file_name);  //open할 파일
 
-	lock_acquire(&filesys_lock);
-	file = filesys_open(file_name);
-	if (file == NULL)
-	{
-		lock_release(&filesys_lock);
+  if (!open_file_name)
+  {
+    lock_release(&filesys_lock);  //lock을 풀어줌
+    return -1;
+  }
 
-		return -1;
-	}
+  int open_file_fd = process_add_file(open_file_name);
+  lock_release(&filesys_lock);  //lock을 풀어줌
 
-	fd = process_add_file(file);	//add file in file descripter table
-
-	lock_release(&filesys_lock);
-
-	return fd;
+  return open_file_fd;
 }
 
-/* return filesize
-if there is no file, return -1 */
-int filesize (int fd)
+int 
+file_size (int fd)
 {
-	struct file *file;
-	int size;
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
+  struct file *check_file = process_get_file(fd);  //size를 확인할 파일
+  if (!check_file)
+  {
+    lock_release(&filesys_lock);  // lock을 풀어줌
+    return -1;
+  }
+  int file_size = file_length(check_file);
+  lock_release(&filesys_lock);  //lock을 풀어줌
 
-	file = process_get_file(fd);
-
-	if (file == NULL) return -1;
-
-	size = file_length(file);
-
-
-	return size;
+  return file_size;
 }
 
-/* get file and read it
-if fail, return -1 */
-int read (int fd, void *buffer, unsigned size)
+int
+read (int fd, void *buffer, unsigned size)
 {
-	struct file *file = process_get_file(fd);
-	int ret;
+  check_address(buffer);
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
 
-	check_address(buffer);
-	lock_acquire(&filesys_lock);
+  if (fd == 0)  //stdin
+  {
+    unsigned int i;
+    
+    for (i = 0; i < size; i++)
+    {
+      ((char*)buffer)[i] = input_getc();
+    }
 
-	/* fd == 0 : stdin */
-	if (fd == 0)
-	{
-		unsigned int i;
+    lock_release(&filesys_lock);  //lock을 풀어줌
 
-		for (i = 0; i < size; i++) ((char*)buffer)[i] = input_getc();
+    return size;
+  }
 
-		lock_release(&filesys_lock);
-
-		return size;
-	}
-
-	if(!file)
-	{
-		lock_release(&filesys_lock);
-
-		return -1;
-	}
-
-	ret = file_read(file, buffer, size);
-
-	lock_release(&filesys_lock);
-
-	return ret;
+  struct file *file_name = process_get_file(fd);
+  if(!file_name)
+  {
+    lock_release(&filesys_lock);  //lock을 풀어줌
+    return -1;  
+  }
+  
+  int file_size = file_read(file_name, buffer, size);  //읽어올 파일의 크기
+  lock_release(&filesys_lock);
+  
+  return file_size;
 }
 
-/* get file and write on it
-if fail, return -1 */
-int write (int fd, void *buffer, unsigned size)
+int
+write (int fd, void *buffer, unsigned size)
 {
-	struct file *file = process_get_file(fd);
-	int ret;
+    //printf("write before check\n");
+  check_address(buffer);
+  //printf("write after check\n");
 
-	check_address(buffer);
-	lock_acquire(&filesys_lock);
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
+  
 
-	/* fd == 1 : stdout */
-	if (fd == 1)
-	{
-		putbuf(buffer, size);
-		
-		lock_release(&filesys_lock);
+  if (fd == 1)
+  {
+    putbuf(buffer, size);
+    lock_release(&filesys_lock);  //lock을 풀어줌
 
-		return size;
-	}
+    return size;
+  }
 
-	if(!file)
-	{
-		lock_release(&filesys_lock);
+  struct file *file_name = process_get_file(fd);
+  if(!file_name)
+  {
+    lock_release(&filesys_lock);  //lock을 풀어줌
+    return -1;
+  }
 
-		return -1;
-	}
+  int file_size = file_write(file_name, buffer, size);
+  lock_release(&filesys_lock);  //lock을 풀어줌 
 
-	ret = file_write(file, buffer, size);
-
-	lock_release(&filesys_lock);
-
-	return ret;
+  return file_size;
 }
 
-/* get file and change position */
-void seek (int fd, unsigned int position)
+void
+seek (int fd, unsigned int position)
 {
-	struct file *file;
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
 
-	file = process_get_file(fd);
-	if (!file) return;
-
-	file_seek(file, position);
-
+  struct file *file_name = process_get_file(fd);
+  if (!file_name)
+  {
+    lock_release(&filesys_lock);  //lock을 풀어줌
+    return;
+  }
+  file_seek(file_name, (off_t)position);
+  lock_release(&filesys_lock);  //lock을 풀어줌
 }
 
-/* return file's position
-if fail, return -1 */
-unsigned tell (int fd)
+unsigned
+tell (int fd)
 {
-	struct file *file;
-	off_t ret;
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
 
-	file = process_get_file(fd);
+  struct file *file_name = process_get_file(fd);
+  
+  if (!file_name)
+  {
+    lock_release(&filesys_lock);  //lock을 풀어줌
+    return -1;
+  }
 
-	if (!file) return -1;
-
-	ret = file_tell(file);
-
-	return ret;
+  off_t offset = file_tell(file_name);
+  lock_release(&filesys_lock);  //lock을 풀어줌
+  
+  return offset; 
 }
 
-/* close file and free file descripter */
-void close (int fd)
+void
+close (int fd)
 {
-	process_close_file(fd);
+  lock_acquire(&filesys_lock);  //lock을 걸어줌
+  process_close_file(fd);
+  lock_release(&filesys_lock);  //lock을 풀어줌
 }

@@ -103,118 +103,51 @@ finishes. */
 void mlfqs_recalc(void)
 {
 	struct list_elem *e;
-	struct thread* t;
 
 	for( e = list_begin(&all_list) ; e != list_end(&all_list) ; e = list_next(e))
 	{
-		t =  list_entry (e, struct thread,allelem);
-		mlfqs_recent_cpu (t);
-		mlfqs_priority (t);
+		mlfqs_recent_cpu (list_entry (e, struct thread,allelem));
+		mlfqs_priority (list_entry (e, struct thread,allelem));
 		
 	}	
 }
 
 void mlfqs_increment(void)
 {
-	struct thread *t = thread_current();
-	if(t!=idle_thread)
-		t-> recent_cpu = add_mixed(t-> recent_cpu ,1);
+	if(thread_current()!=idle_thread)
+		thread_current()-> recent_cpu = add_mixed(thread_current()-> recent_cpu ,1);
 
 }
 
 void mlfqs_priority (struct thread *t)
 {
-	/*if( t!=idle_thread ) 
+	if( t!=idle_thread ) 
 	{
 		int a = div_mixed(t->recent_cpu,4); // t-> recent_cpu값은 FP
-		int b = int_to_fp(PRI_MAX - (t->nice*2));
-		t->priority = fp_to_int_round (sub_fp(a,b)); //FP 계산 후 int로 변
-	}*/
-if(idle_thread == t) 
-		return;
-
-//priority = PRI_MAX - (recent_cpu / 4) - (nice * 2);
-//아래의 변수들은 위 식의 우변의 각 항을 나타냄.
-	int term1, term2, term3;
-
-	// 우변의 세 항을 일단 계산
-	term1 = int_to_fp(PRI_MAX);
-	term2 = div_mixed(t->recent_cpu, 4);
-	term3 = int_to_fp(t->nice * 2);
-	
-	// 왼쪽에서 부터 차례로 뺄셈
-	term1 = sub_fp(term1, term2);
-	term1 = sub_fp(term1, term3);
-
-	// 다시 int로 바꾸어서 저장
-t->priority = fp_to_int(term1);
+		int b = sub_fp(int_to_fp(PRI_MAX), int_to_fp(t->nice*2));
+		t->priority = fp_to_int(sub_fp(b,a)); //FP 계산 후 int로 변
+	}
 }
 
 void mlfqs_recent_cpu(struct thread *t)
 {
-	/*if( t != idle_thread )
+	if( t != idle_thread )
 	{
 		int a = div_fp(mult_mixed(load_avg,2),add_mixed(mult_mixed(load_avg,2),1));
 		t->recent_cpu = add_mixed(mult_fp(a,t->recent_cpu),t->nice);
-	}*/
-
-		//시발 왜 배껴도 안됨^^
-if(idle_thread == t)
-		return;
-//recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice;
-//아래의 변수들을 위 식 우변의 네 개의 항을 각각 나타냄.
-	int term1, term2, term3, term4;
-	term1 = mult_mixed(load_avg, 2);
-	term2 = add_mixed(term1, 1);		// 겹치는 부분이 있어서 term1을 활용함
-	term3 = t->recent_cpu;
-	term4 = t->nice;
-
-	//왼쪽부터 차례로 계산
-	term1 = div_fp(term1, term2);
-	term1 = mult_fp(term1, term3);
-	term1 = add_mixed(term1, term4);
-
-	//결과값 저장
-t->recent_cpu = term1;
+	}
 } 
 
 
 void mlfqs_load_avg(void)
 {
-	/*int size = list_size (&ready_list);
+	int size = list_size (&ready_list)+1;
 	
 	if(thread_current() == idle_thread) size--;	
 
 	load_avg = div_mixed(mult_mixed(load_avg,59),60);
 	load_avg = add_fp(mult_mixed(load_avg,1),div_mixed(int_to_fp(size),60));
-	if(load_avg<0)load_avg=0;*/
-
-	//load_avg = (59 / 60) * load_avg + (1 / 60) * ready_threads
-	//아래의 변수들은 위 식 우변의 네개의 항을 각각 나타냄.
-	int term1, term2, term3, term4;
-	term1 = div_mixed(int_to_fp(59), 60);
-	term2 = load_avg;
-	term3 = div_mixed(int_to_fp(1), 60);
-	// term4는 ready_list에 있는 thread의 갯수와 현재스레드의 수를 저장하는데
-	// 아래의 탐색을 통해 찾는다. 다만 현재idle_thread라면, 더하지 않는다.
-	term4 = 1;
-	struct list_elem *e;
-	for(e = list_begin(&ready_list); e != list_end(&ready_list);
-			e = list_next(e))
-		term4++;
-
-	if(thread_current() == idle_thread)
-		term4--;
-	// 각 항을 초기화 했으므로 load_avg를 계산한다
-	term1 = mult_fp(term1, term2);
-	term3 = mult_mixed(term3, term4);
-	term1 = add_fp(term1, term3);
-
-	load_avg = term1;
-	
-	//load_avg는 0보다 작아질 수 없다.
-	if(load_avg < 0)
-load_avg = 0;
+	if(load_avg<0) load_avg=0;
 }
 
 
@@ -624,10 +557,9 @@ int
 thread_get_recent_cpu (void)
 {
 	int recent_cpu_;
-	struct thread *t = thread_current();
 	intr_disable();
 
-	recent_cpu_= fp_to_int_round(mult_mixed(t->recent_cpu,100));
+	recent_cpu_= fp_to_int_round(mult_mixed(thread_current()->recent_cpu,100));
 
 	intr_enable();
 
